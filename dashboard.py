@@ -103,25 +103,25 @@ fig_receita_categorias = px.bar(receita_categorias,
 fig_receita_categorias.update_layout(yaxis_title='Receita')
 
 # Função para exibir métricas e gráficos
-def exibir_metricas_e_graficos(dados):
+def exibir_metricas_e_graficos(dados, key_suffix):
     coluna1, coluna2 = st.columns(2)
     with coluna1:
         st.metric('Receita', formata_numero(dados['Preço'].sum(), 'R$'))
-        st.plotly_chart(fig_mapa_receita, use_container_width=True)
-        st.plotly_chart(fig_receita_estados, use_container_width=True)
+        st.plotly_chart(fig_mapa_receita, use_container_width=True, key=f'mapa_receita_{key_suffix}')
+        st.plotly_chart(fig_receita_estados, use_container_width=True, key=f'receita_estados_{key_suffix}')
     with coluna2:
         st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
-        st.plotly_chart(fig_receita_mensal, use_container_width=True)
-        st.plotly_chart(fig_receita_categorias, use_container_width=True)
+        st.plotly_chart(fig_receita_mensal, use_container_width=True, key=f'receita_mensal_{key_suffix}')
+        st.plotly_chart(fig_receita_categorias, use_container_width=True, key=f'receita_categorias_{key_suffix}')
 
 # Visualização no Streamlit
 aba1, aba2, aba3 = st.tabs(['Receita', 'Quantidade de vendas', 'Vendedores'])
 
 with aba1:
-    exibir_metricas_e_graficos(dados)
+    exibir_metricas_e_graficos(dados, key_suffix='aba1')
 
 with aba2:
-    exibir_metricas_e_graficos(dados)
+    exibir_metricas_e_graficos(dados, key_suffix='aba2')
 
 with aba3:
     qtd_vendedores = st.number_input('Quantidade de vendedores', 2, 10, 5, key='qtd_vendedores')
@@ -136,7 +136,7 @@ with aba3:
             text_auto=True,
             title=f'Top {qtd_vendedores} vendedores (receita)'
         )
-        st.plotly_chart(fig_receita_vendedores)
+        st.plotly_chart(fig_receita_vendedores, key='receita_vendedores')
     with coluna2:
         st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
         vendas_vendedores = dados.groupby('Vendedor').size().sort_values(ascending=False).head(qtd_vendedores)
@@ -147,4 +147,4 @@ with aba3:
             text_auto=True,
             title=f'Top {qtd_vendedores} vendedores (quantidade de vendas)'
         )
-        st.plotly_chart(fig_vendas_vendedores)
+        st.plotly_chart(fig_vendas_vendedores, key='vendas_vendedores')
