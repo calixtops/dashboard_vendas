@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
-import pandas as pd 
-import plotly.express as px 
+import pandas as pd
+import plotly.express as px
 
 # Configura a página para ter layout wide (largo)
 st.set_page_config(layout='wide')
@@ -26,32 +26,41 @@ regiao = st.sidebar.selectbox('Região', regioes)
 if regiao == "Brasil":
     regiao = ''
     
-todos_anos = st.sidebar.checkbox('Dados de todo o período', value = True)
+todos_anos = st.sidebar.checkbox('Dados de todo o período', value=True)
 
 if todos_anos:
     ano = ''
 else:
     ano = st.sidebar.slider('Ano', 2020, 2023)
     
-query_string = {'regiao':regiao.lower(), 'ano':ano}
-response = requests.get(url, params= query_string)
+query_string = {'regiao': regiao.lower(), 'ano': ano}
+response = requests.get(url, params=query_string)
 
-# response = requests.get(url)
-# Criação do DataFrame a partir dos dados da API
-dados = pd.DataFrame.from_dict(response.json())
+# Verifica se a requisição foi bem-sucedida
+if response.status_code == 200:
+    dados = pd.DataFrame.from_dict(response.json())
+else:
+    st.error(f"Erro ao acessar a API: {response.status_code}")
+    st.stop()
 
 # Conversão da coluna 'Data da Compra' para o formato datetime
-dados['Data da Compra'] = pd.to_datetime(dados['Data da Compra'], format='%d/%m/%Y')
+if 'Data da Compra' in dados.columns:
+    dados['Data da Compra'] = pd.to_datetime(dados['Data da Compra'], format='%d/%m/%Y')
+else:
+    st.error("Coluna 'Data da Compra' não encontrada nos dados.")
+    st.stop()
 
+# Filtro de vendedores
 filtro_vendedores = st.sidebar.multiselect('Vendedores', dados['Vendedor'].unique())
 if filtro_vendedores:
     dados = dados[dados['Vendedor'].isin(filtro_vendedores)]
 
-
 # Agrupamento de dados por estado para calcular a receita
-receita_estados = dados.groupby('Local da compra')['Preço'].sum()
-receita_estados = dados.drop_duplicates(subset='Local da compra')[['Local da compra', 'lat', 'lon']].merge(
-    receita_estados, left_on='Local da compra', right_index=True).sort_values('Preço', ascending=False)
+receita_estados = dados.groupby('Local da compra')['Preço'].sum().reset_index()
+receita_estados = receita_estados.merge(
+    dados[['Local da compra', 'lat', 'lon']].drop_duplicates(subset='Local da compra'),
+    on='Local da compra'
+).sort_values('Preço', ascending=False)
 
 # Agrupamento de dados por mês para calcular a receita mensal
 receita_mensal = dados.set_index('Data da Compra').groupby(pd.Grouper(freq='M'))['Preço'].sum().reset_index()
@@ -91,52 +100,50 @@ fig_receita_estados = px.bar(receita_estados.head(),
 fig_receita_categorias = px.bar(receita_categorias,
                                 text_auto=True,
                                 title='Receita por categoria')
-fig_receita_categorias.update_layout(yaxis_title='Receita Mensal')
+fig_receita_categorias.update_layout(yaxis_title='Receita')
+
+# Função para exibir métricas e gráficos
+def exibir_metricas_e_graficos(dados):
+    coluna1, coluna2 = st.columns(2)
+    with coluna1:
+        st.metric('Receita', formata_numero(dados['Preço'].sum(), 'R$'))
+        st.plotly_chart(fig_mapa_receita, use_container_width=True)
+        st.plotly_chart(fig_receita_estados, use_container_width=True)
+    with coluna2:
+        st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
+        st.plotly_chart(fig_receita_mensal, use_container_width=True)
+        st.plotly_chart(fig_receita_categorias, use_container_width=True)
 
 # Visualização no Streamlit
 aba1, aba2, aba3 = st.tabs(['Receita', 'Quantidade de vendas', 'Vendedores'])
 
 with aba1:
-    coluna1, coluna2 = st.columns(2)
-    with coluna1:
-        st.metric('Receita', formata_numero(dados['Preço'].sum(), 'R$'))
-        st.plotly_chart(fig_mapa_receita, use_container_width=True)
-        st.plotly_chart(fig_receita_estados, use_container_width=True)
-    with coluna2:
-        st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
-        st.plotly_chart(fig_receita_mensal, use_container_width=True)
-        st.plotly_chart(fig_receita_categorias, use_container_width=True)
+    exibir_metricas_e_graficos(dados)
 
 with aba2:
-    coluna1, coluna2 = st.columns(2)
-    with coluna1:
-        st.metric('Receita', formata_numero(dados['Preço'].sum(), 'R$'))
-        st.plotly_chart(fig_mapa_receita, use_container_width=True)
-        st.plotly_chart(fig_receita_estados, use_container_width=True)
-    with coluna2:
-        st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
-        st.plotly_chart(fig_receita_mensal, use_container_width=True)
-        st.plotly_chart(fig_receita_categorias, use_container_width=True)
+    exibir_metricas_e_graficos(dados)
 
 with aba3:
-    qtd_vendedores = st.number_input('Quantidade de vendedores', 2, 10, 5)
+    qtd_vendedores = st.number_input('Quantidade de vendedores', 2, 10, 5, key='qtd_vendedores')
     coluna1, coluna2 = st.columns(2)
     with coluna1:
         st.metric('Receita', formata_numero(dados['Preço'].sum(), 'R$'))
+        receita_vendedores = dados.groupby('Vendedor')['Preço'].sum().sort_values(ascending=False).head(qtd_vendedores)
         fig_receita_vendedores = px.bar(
-            pd.DataFrame(dados.groupby('Vendedor')['Preço'].sum().sort_values(ascending=False).head(qtd_vendedores)),
+            receita_vendedores.reset_index(),
             x='Preço',
-            y=dados.groupby('Vendedor')['Preço'].sum().sort_values(ascending=False).head(qtd_vendedores).index,
+            y='Vendedor',
             text_auto=True,
             title=f'Top {qtd_vendedores} vendedores (receita)'
         )
         st.plotly_chart(fig_receita_vendedores)
     with coluna2:
         st.metric('Quantidade de vendas', formata_numero(dados.shape[0]))
+        vendas_vendedores = dados.groupby('Vendedor').size().sort_values(ascending=False).head(qtd_vendedores)
         fig_vendas_vendedores = px.bar(
-            pd.DataFrame(dados.groupby('Vendedor')['Preço'].count().sort_values(ascending=False).head(qtd_vendedores)),
-            x='Preço',
-            y=dados.groupby('Vendedor')['Preço'].count().sort_values(ascending=False).head(qtd_vendedores).index,
+            vendas_vendedores.reset_index(),
+            x=0,
+            y='Vendedor',
             text_auto=True,
             title=f'Top {qtd_vendedores} vendedores (quantidade de vendas)'
         )
